@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-06-14] Enforce English Project Documentation
+
+- Translated `AGENTS.md` to English and added an English-only rule for documentation and external project communication.
+- Affected files: `AGENTS.md`, `docs/changelog.md`.
+- Migrations: none.
+
+## [2026-06-14] Add Brevity Rule
+
+- Added a project rule requiring concise default responses and limiting routine structure, preambles, and final summaries.
+- Affected files: `AGENTS.md`, `docs/changelog.md`.
+- Migrations: none.
+
 ## [2026-06-14] Add Data-Driven Configuration Rule
 
 - Added a project rule banning hardcoded model/provider behavior in favor of YAML-driven configuration.

@@ -1,40 +1,48 @@
 # TD-Sop-Anim-Bridge
 
-## Идея проекта
+## Project Idea
 
-Проект посвящен сохранению и экспорту анимации из TouchDesigner в обменные 3D-форматы, которые поддерживают последовательности кадров и анимированную геометрию.
+This project is about saving and exporting animation from TouchDesigner into 3D exchange formats that support frame sequences and animated geometry.
 
-Главный фокус: экспортировать анимацию напрямую из контекста SOP / Surface Operators в форматы вроде Alembic (`.abc`) или USD (`.usd`, `.usda`, `.usdc`), чтобы такие файлы можно было дальше импортировать в Blender, Houdini и другие 3D-пакеты.
+The main focus is direct export from the SOP / Surface Operators context into formats such as Alembic (`.abc`) or USD (`.usd`, `.usda`, `.usdc`) so the resulting files can be imported into Blender, Houdini, and other 3D tools.
 
-## Зачем это нужно
+## Motivation
 
-Сейчас рабочий процесс неудобный:
+The current workflow is too indirect:
 
-1. В TouchDesigner приходится сохранять геометрию покадрово.
-2. Часто используется промежуточный формат или обходной путь через `bhclassic`.
-3. Затем в Houdini эти кадры нужно вручную или полуавтоматически объединять в один анимированный `.abc` или `.usd` файл.
-4. Только после этого файл можно нормально импортировать, например, в Blender.
+1. TouchDesigner geometry has to be saved frame by frame.
+2. A temporary format or workaround such as `bhclassic` is often used.
+3. Houdini is then used to combine those frames into one animated `.abc` or `.usd` file.
+4. Only after that can the file be imported cleanly into Blender or another DCC.
 
-Цель проекта — убрать этот муторный промежуточный этап и сделать более прямой мост от TouchDesigner SOP-анимации к стандартным анимированным 3D exchange-файлам.
+The goal is to remove this intermediate step and build a more direct bridge from TouchDesigner SOP animation to standard animated 3D exchange files.
 
-## Что важно учитывать агентам
+## Agent Context
 
-- Это не просто экспорт статичной геометрии.
-- Нужно думать о frame sequence, topology changes, vertex attributes, point attributes, normals, UV, colors и transform/geometry animation.
-- Alembic и USD являются приоритетными целевыми форматами.
-- Blender и Houdini — важные целевые приложения для проверки результата.
-- TouchDesigner SOP-контекст — основной источник данных.
-- Решения должны быть пригодны для реального production workflow, а не только для демонстрационного proof of concept.
+- This is not just a static geometry exporter.
+- Account for frame sequences, topology changes, vertex attributes, point attributes, normals, UVs, colors, and transform/geometry animation.
+- Alembic and USD are the priority target formats.
+- Blender and Houdini are important target applications for validation.
+- TouchDesigner SOP context is the primary data source.
+- Solutions should fit real production workflows, not only demo proof-of-concepts.
 
-## Возможные направления
+## Possible Directions
 
-- Исследовать существующие возможности TouchDesigner Python API для чтения SOP-геометрии по кадрам.
-- Сделать экспортёр, который семплирует SOP на диапазоне кадров и пишет один анимированный файл.
-- Проверить Python-библиотеки и CLI-инструменты для записи Alembic/USD.
-- Рассмотреть промежуточный bridge через Houdini только как fallback, а не как основную цель.
-- Документировать ограничения: меняющаяся топология, большие кэши, атрибуты, FPS, frame range, scale/orientation differences между TD, Houdini и Blender.
+- Investigate TouchDesigner Python API support for reading SOP geometry per frame.
+- Build an exporter that samples a SOP across a frame range and writes one animated file.
+- Evaluate Python libraries and CLI tools for writing Alembic/USD.
+- Treat a Houdini bridge as a fallback, not the main goal.
+- Document limitations: changing topology, large caches, attributes, FPS, frame range, and scale/orientation differences between TD, Houdini, and Blender.
 
-## Changelog — Document All Changes
+## Language
+
+Documentation and external project communication are English-only.
+
+- Keep repository docs, changelog entries, issues, release notes, public comments, and user-facing project text in English.
+- Translate existing non-English project documentation when touching it.
+- Internal reasoning can happen silently in any language, but the output committed to the project should be English.
+
+## Changelog - Document All Changes
 
 ALWAYS update `docs/changelog.md` when making changes.
 
@@ -63,7 +71,7 @@ When the user proposes a change in strategy, positioning, architecture, or UX, D
 
 If you catch yourself simply repackaging the user's words into an argument, say so directly.
 
-## No Hardcoding — 100% Data-Driven
+## No Hardcoding - 100% Data-Driven
 
 For model/provider-specific behavior, prefer data-driven configuration over hardcoded branches.
 
@@ -71,3 +79,15 @@ For model/provider-specific behavior, prefer data-driven configuration over hard
 - ALWAYS represent model/provider capabilities and parsing rules in YAML config, using fields such as `response_parser`, `requires_image`, and `asset_type`.
 - Test every model/provider decision with this question: `Will this break when we add 100 new models?`
 - If the answer is yes, refactor the behavior into YAML-driven configuration.
+
+## Brevity - Hard Requirement
+
+The user's attention context window is narrow. Long walls of text are pain, not service.
+
+- Default response length: 3-7 lines.
+- Use long breakdowns only when the user explicitly asks for detailed analysis, for example `ULTRATHINK`, `detailed`, or `break it down`.
+- Do not use tables or numbered lists for routine communication. Add structure only when comparing options or when it materially improves clarity.
+- Do not use preambles like `I will investigate`, `let's think`, or `so`. Go straight to the point.
+- Do not add final summaries just to restate visible diffs.
+- When asking for a decision, ask one question. If there is a recommendation, state it in one line and wait for ack/nack.
+- If the answer is getting long, reduce it to the core thesis. Length is not depth.
