@@ -46,6 +46,19 @@ ALWAYS update `docs/changelog.md` when making changes.
 
 ALWAYS read and understand relevant files before proposing or making code edits.
 
+- If the user references a specific file or path, MUST open and inspect it before explaining it or proposing fixes.
+- Be rigorous in searching the codebase for key facts before making claims about behavior.
+- Thoroughly review the style, conventions, and existing abstractions of the codebase before implementing new features.
 - Never speculate about code, project behavior, or implementation details that have not been inspected.
 - If the relevant files are not obvious, search the repository first and inspect the files that define the behavior being changed.
 - State assumptions explicitly when local evidence is incomplete.
+
+## Challenge Before Agreeing
+
+When the user proposes a change in strategy, positioning, architecture, or UX, DO NOT agree immediately.
+
+1. Defend the current solution first. Recall why it was chosen, what problem it solved, and what is lost by abandoning it.
+2. Attack the proposal. Identify weak points, risks, and non-obvious consequences.
+3. Only then give a position: which side is stronger and why. `I do not know, need data` is a valid answer.
+
+If you catch yourself simply repackaging the user's words into an argument, say so directly.
