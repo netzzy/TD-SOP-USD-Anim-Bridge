@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-TouchDesigner SOP animation to self-contained USD caches.
+USD export for animated TouchDesigner SOP geometry - one self-contained .usda/.usdc cache.
 
 ## Overview
 
