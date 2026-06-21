@@ -1,4 +1,4 @@
-# ADR 0007 - Binary `.usdc` via sidecar transcode
+# ADR 0007 - Static binary `.usdc` via sidecar transcode
 
 Status: Accepted
 
@@ -14,11 +14,11 @@ inside the TD process because of runtime/DLL conflict risk.
 
 ## Decision
 
-Add a `Format` custom parameter with `usda` and `usdc` choices. The existing writer
-always produces ASCII USD first:
+Add a `Format` custom parameter with `usda` and `usdc` choices. For static export,
+the existing writer produces ASCII USD first:
 
 - `usda`: write the existing `.usda` output directly.
-- `usdc`: write the same `.usda` to a temporary path, then run
+- static `usdc`: write the same `.usda` to a temporary path, then run
   `tools/transcode_usd.py` in `tools/.venv-usd` to export the layer to crate via
   `Sdf.Layer.FindOrOpen(input).Export(output)`.
 
@@ -27,9 +27,11 @@ The final file extension is forced from `Format`, so `export/sop_usd_export.usda
 
 ## Consequences
 
-- The existing `.usda` static and streaming writers remain the source of truth.
+- The static `.usdc` path still reuses the existing `.usda` writer.
 - TouchDesigner still never imports `pxr`; all usd-core work is out-of-process.
-- `.usdc` export is not memory-bounded. The sidecar materializes the full layer in
-  usd-core before writing crate, so peak sidecar RAM is O(total exported USD).
+- Static `.usdc` export is not memory-bounded. The sidecar materializes the full
+  layer in usd-core before writing crate, so peak sidecar RAM is O(total exported USD).
 - The temporary `.usda` is deleted after transcode.
 - `tools/.venv-usd` is now required for `.usdc` export, not only validation.
+- ADR 0010 replaces this path for animated `.usdc` with binary chunk files and a
+  direct crate-building sidecar.

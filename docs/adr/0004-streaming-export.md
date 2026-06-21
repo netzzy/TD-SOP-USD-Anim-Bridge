@@ -40,9 +40,9 @@ actually changes.
 - Exportable size is bounded by **disk, not RAM**; peak RAM ≈ one frame.
 - Output stays a single self-contained `.usda` (no value clips).
 - Cost: transient per-attribute temp files on disk (cleaned up via `try/finally`).
-- `.usdc` is supported only as a post-export sidecar transcode (see
-  [0007](0007-binary-usdc-via-transcode.md)). The TD-side `.usda` writer stays
-  memory-bounded; the binary sidecar re-materializes the full layer in RAM.
+- Animated `.usdc` uses binary chunk files and a direct crate-building sidecar (see
+  [0010](0010-animated-usdc-binary-chunks.md)). The TD-side writer stays
+  memory-bounded; final crate authoring still happens out-of-process.
 - Static (single-frame) export keeps the simple in-memory `_build`.
 - ADR 0009 replaces the original scrub/force-cook driver. This ADR still defines the
   memory-bounded section/temp-file layout used by the playback callback.

@@ -1,5 +1,47 @@
 # Changelog
 
+## [2026-06-21] Add Experimental Native Backend Modes
+
+- Added `Export Mode`, `Native Status`, and `Setup Native Support` to separate the
+  default compatible SOP Python exporter from optional native acceleration paths.
+- Added experimental CPlusPlus SOP and POP chunk writers plus `native/build.ps1`;
+  native build artifacts are ignored and should be distributed as release
+  artifacts, not committed source.
+- Experimental Native SOP now exports safe SOP inputs with point custom attrs plus
+  standard `N`, `Cd`, and texture coordinates, and rejects unsupported generic
+  vertex/primitive custom attributes before writing output.
+- Experimental Native POP uses a second POP input and preserves point, vertex, and
+  primitive float attributes through the existing chunk sidecar path.
+- Native plugin parameters are authored from `project.folder` expressions so the
+  component does not save absolute developer-machine DLL paths.
+- Native command parameters are reset after native exports so temporary folders and
+  status-file paths are not persisted into saved `.toe`/`.tox` files.
+- Validated Compatible SOP Python, Experimental Native SOP, and Experimental
+  Native POP in static/animated `.usda` and `.usdc` smoke exports; Native SOP also
+  verifies fail-fast behavior on the current `vertex:T` SOP case.
+- Updated README, native README, and ADRs with the compatibility matrix and opt-in
+  native backend policy.
+- Affected files: `src/ExportExt.py`, `native/*`, `.gitignore`, `README.md`,
+  `docs/adr/*`, `docs/changelog.md`, `TD-SOP-USD-Anim-Bridge.toe`,
+  `TD_SOP_USD_Anim_Bridge.tox`.
+- Migrations: existing users keep `Compatible SOP Python`; native users must build
+  native plugins with `native/build.ps1` or press `Setup Native Support`.
+
+## [2026-06-21] Add Animated USDC Binary Chunk Builder
+
+- Animated `Format = usdc` now writes binary numeric chunks during playback and
+  builds the final crate with `tools/build_usdc_from_chunks.py`, avoiding the old
+  hot-path ASCII formatting/transcode route.
+- Added `numpy` to the optional USD sidecar requirements and updated setup/status,
+  README, tools docs, ADRs, and agent architecture notes to describe the new split:
+  animated `.usdc` uses chunks; static `.usdc` still transcodes a temporary `.usda`.
+- Affected files: `src/ExportExt.py`, `tools/build_usdc_from_chunks.py`,
+  `tools/requirements.txt`, `tools/setup.py`, `README.md`, `tools/README.md`,
+  `AGENTS.md`, `docs/adr/*`, `docs/changelog.md`,
+  `TD-SOP-USD-Anim-Bridge.toe`, `TD_SOP_USD_Anim_Bridge.tox`.
+- Migrations: rerun `python tools/setup.py` or press `Setup Binary Support` if the
+  existing sidecar environment does not have `numpy`.
+
 ## [2026-06-21] Preserve Mesh Schema on Empty Animated Frames
 
 - Fixed animated exports where a mesh sequence contains fully empty frames. The

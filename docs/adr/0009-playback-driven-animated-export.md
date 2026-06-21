@@ -34,10 +34,10 @@ Animated `Export()` starts a playback state machine instead of scrubbing frames:
   ADR 0004 section temp files.
 - The first written frame creates the section plan and schema/topology guards. Later
   frames reuse the same guards and `_streamFrameStep`.
-- Finalization closes temp files, assembles the `.usda`, optionally transcodes to
-  `.usdc`, deletes temps, disables the Execute DAT, and restores the saved timeline
-  state including the visible working range. Cancel and failure follow the same
-  cleanup path.
+- Finalization closes temp files, then either assembles the `.usda` or builds
+  animated `.usdc` from binary chunks, deletes temps, disables the Execute DAT, and
+  restores the saved timeline state including the visible working range. Cancel and
+  failure follow the same cleanup path.
 - Static export remains synchronous and unchanged.
 
 New UI parameters are `Playback Start`, `Output FPS`, `Frame Step`, `Cancel`,
@@ -52,5 +52,6 @@ reported through `Export Status` and the textport.
 - The UI stays responsive during animated export, and cancel/progress are natural.
 - Animated export duration now depends on real playback through every frame; this is
   the cost of correctness.
-- The one-frame RAM ceiling from ADR 0004 remains intact. `.usdc` transcode remains
-  a sidecar step that can materialize the full layer in RAM.
+- The one-frame RAM ceiling from ADR 0004 remains intact. Animated `.usdc` avoids
+  ASCII formatting in the playback callback; final crate authoring remains a
+  sidecar step that can grow with cache size.

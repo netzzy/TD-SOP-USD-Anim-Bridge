@@ -45,6 +45,7 @@ TDImportCache/
 # Exporter output artifacts
 export/
 _tdsopusd_temp/
+native/**/build/
 
 # USD validation virtualenv (usd-core)
 tools/.venv-usd/

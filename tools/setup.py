@@ -1,4 +1,4 @@
-"""Bootstrap the usd-core sidecar virtualenv used for .usdc and validation."""
+"""Bootstrap the USD sidecar virtualenv used for .usdc and validation."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def main() -> int:
 	try:
 		status = setup(force=args.force)
 		write_status(args.status_json, status)
-		print("usd-core sidecar is ready: " + status["python"], flush=True)
+		print("USD sidecar is ready: " + status["python"], flush=True)
 		return 0
 	except BaseException as exc:
 		status = {

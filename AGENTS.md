@@ -57,14 +57,18 @@ The exporter is implemented as the `ExportExt` Python extension on the
 `TD_SOP_USD_Anim_Bridge` Base COMP (persisted in `TD-SOP-USD-Anim-Bridge.toe` and shipped
 as `TD_SOP_USD_Anim_Bridge.tox`). The canonical reviewable source is
 `src/ExportExt.py`, synced to the `ExportExt` DAT. It exports animated SOP geometry
-to a single USD file: `.usda` directly, or `.usdc` by sidecar transcoding the
-generated `.usda`. Key decisions are recorded in `docs/adr/` (see
+to a single USD file: `.usda` directly, animated `.usdc` via binary chunk files plus
+a sidecar crate builder, and static `.usdc` by sidecar transcoding a temporary
+`.usda`. Key decisions are recorded in `docs/adr/` (see
 `docs/adr/README.md`); the change log is `docs/changelog.md`. This section is the
 fast orientation for a new agent.
 
 **Data flow**
 - Input: `IN_FOR_EXPORT` (In SOP) inside the COMP, fed from outside via the COMP
   input connector.
+- Optional native input: `IN_POP_FOR_EXPORT` (In POP) is connector 1 for
+  `Experimental Native POP`. `Compatible SOP Python` remains the default public
+  contract; native modes are opt-in acceleration paths (see ADR 0011).
 - `_sampleSop(sop)` → intermediate representation (IR) dict for one frame:
   `numPoints/numPrims/numVertices`, `P` (xyz list), and `pointAttribs` /
   `vertexAttribs` / `primAttribs` as `{name: {size, values}}`. For meshes it also
@@ -85,11 +89,12 @@ fast orientation for a new agent.
     which source frames are written. Written source frames are mapped to dense output
     timeCodes starting at `Frame Start`, and `Output FPS` is authored as
     `framesPerSecond`/`timeCodesPerSecond`. Each written frame appends a
-    `<frame>: <array>,` line to per-attribute temp files (`_buildSections`). On
-    completion `_finishPlaybackExport` assembles the final `.usda`, optionally
-    transcodes `.usdc`, cleans temps, disables the Execute DAT, and restores the
-    previous timeline state including the visible working range. Peak memory is one
-    frame (see ADR 0004 and ADR 0009).
+    `<frame>: <array>,` line to per-attribute temp files (`_buildSections`) for
+    `.usda`, or raw numeric chunk files plus a manifest (`_buildBinarySections`) for
+    animated `.usdc`. On completion `_finishPlaybackExport` assembles the final
+    `.usda` or runs the chunk builder for `.usdc`, cleans temps, disables the Execute
+    DAT, and restores the previous timeline state including the visible working
+    range. Peak TD memory is one frame (see ADR 0004, ADR 0009, and ADR 0010).
     `topoVaries` comes from the user `Topology Changes` toggle; `_topoKey` is a
     cheap safety net if the user mis-declares constant.
 
@@ -105,17 +110,19 @@ halves positions, widths, and generic float primvars. Integer arrays are never h
 **Stage**: `defaultPrim = "Exported"`, `metersPerUnit = 1`, `upAxis = "Y"`; animated
 adds `framesPerSecond`/`timeCodesPerSecond` (from `Output FPS`) and
 `startTimeCode`/`endTimeCode`. Meshes set `subdivisionScheme = "none"`. All exports
-author `float3[] extent` from the sampled point bbox. Binary `.usdc` export writes
-the same `.usda` data to a temp file and transcodes it with `tools/transcode_usd.py`
-using an interpreter resolved from the `USD Python Executable` parameter,
-`TD_SOP_USD_ANIM_BRIDGE_PYTHON`, or `tools/.venv-usd`; this sidecar step is not RAM-bounded.
+author `float3[] extent` from the sampled point bbox. Animated binary `.usdc` export
+writes numeric chunk files and a manifest, then runs `tools/build_usdc_from_chunks.py`
+with an interpreter resolved from the `USD Python Executable` parameter,
+`TD_SOP_USD_ANIM_BRIDGE_PYTHON`, or `tools/.venv-usd`. Static `.usdc` still writes a
+temporary `.usda` and transcodes it with `tools/transcode_usd.py`. Sidecar USD
+authoring is out-of-process and can grow in RAM with cache size.
 
 **UI** (custom pars on the COMP): `File` (output path, relative→anchored to
 `project.folder`; extension forced by `Format`), `Format` (`usda`/`usdc`),
 `Temp Folder` (relative path defaults to `_tdsopusd_temp`, used for setup logs,
 animated export chunks, and temporary `.usda` files),
-`USD Python Executable` (optional path to a Python executable with `usd-core`
-installed), `Setup Binary Support` (pulse
+`USD Python Executable` (optional path to a Python executable with `usd-core` and
+`numpy` installed), `Setup Binary Support` (pulse
 that runs `tools/setup.py` with TD's bundled Python), `Binary Status`, `Half
 Precision` (`off`/`safe`/`all`), `Animate`, `Output FPS`, `Frame Step`,
 `Frame Start`, `Frame End`, `Topology Changes`, `Playback Start`, `Cancel`,
@@ -126,20 +133,24 @@ active playback export, and locks `Export`/`Animate` while such an export is run
 
 **Validation**: `tools/validate_usd.py` run with `tools/.venv-usd` (usd-core) checks
 per-time element-count coherence for `.usda` and `.usdc`, including points, normals,
-velocities, extent, topology arrays, ids, and primvars. usd-core is also used by the
-`.usdc` sidecar transcode; it is never imported in TD.
+velocities, extent, topology arrays, ids, and primvars. usd-core and numpy are also
+used by the `.usdc` sidecar builder/transcode; they are never imported in TD.
 
 **Distribution**: `.usda` export works from the `.tox` with no Python package setup.
 `.usdc` export and validation require `tools/setup.py` to create `tools/.venv-usd`
-from `tools/requirements.txt` (`usd-core` pinned). Keep `src/ExportExt.py`, the DAT,
-the `.toe`, and `TD_SOP_USD_Anim_Bridge.tox` in sync when exporter code changes.
+from `tools/requirements.txt` (`usd-core` and `numpy` pinned). Keep
+`src/ExportExt.py`, the DAT, the `.toe`, and `TD_SOP_USD_Anim_Bridge.tox` in sync
+when exporter code changes.
+
+Optional native plugins live under `native/` and are built with `native/build.ps1`;
+generated DLLs are local/release artifacts, not normal source history.
 
 **Known limitations**: Changing-topology animation is authored as time-sampled USD
 topology and verified with usd-core/usdview; per-DCC import behavior is not verified
 (some USD importers read topology only once). NURBS/Bezier need a Convert SOP.
-`.usdc` transcode materializes the full layer in the sidecar, so very large binary
-exports may be memory-heavy. Winding/orientation (`rightHanded` default) is not yet
-DCC-verified. Multi-prim output remains a backlog item.
+`.usdc` sidecar authoring may be memory-heavy for very large caches.
+Winding/orientation (`rightHanded` default) is not yet DCC-verified. Multi-prim
+output remains a backlog item.
 
 ## Possible Directions
 
