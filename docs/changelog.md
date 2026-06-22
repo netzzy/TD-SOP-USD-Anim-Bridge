@@ -1,5 +1,41 @@
 # Changelog
 
+## [2026-06-22] Add Native POP BasisCurves Export
+
+- Added Experimental Native POP support for line-strip and 2-point line-only POP
+  topology by authoring `UsdGeomBasisCurves` instead of rejecting the input.
+- Remapped Native POP point attributes into curve vertex order, preserving custom
+  attributes such as `id`, `NormAge`, and `Tex` on curve exports.
+- Extended the animated `.usdc` chunk builder and `tools/validate_usd.py` to
+  create and validate `BasisCurves`, including `curveVertexCounts`, widths, and
+  primvar sizes.
+- Documented the Native POP curve path and the remaining mixed mesh+curve POP
+  limitation.
+- Affected files: `native/td_pop_usd_writer/TDPopUsdWriter.cpp`,
+  `tools/build_usdc_from_chunks.py`, `tools/validate_usd.py`, `README.md`,
+  `native/README.md`, `docs/adr/0011-experimental-native-backends.md`,
+  `docs/changelog.md`, `TD-SOP-USD-Anim-Bridge.toe`,
+  `TD_SOP_USD_Anim_Bridge.tox`.
+- Migrations: rebuild native plugins with `native/build.ps1` or press
+  `Setup Native Support`.
+
+## [2026-06-21] Fix Native POP Face-Varying Remap
+
+- Fixed Experimental Native POP mesh export so degenerate triangle/quad loop
+  corners are collapsed the same way as the Compatible SOP Python exporter.
+- Remapped POP vertex and primitive attributes through the filtered topology order,
+  keeping `primvars:T`, `primvars:st`, and other face-varying/uniform attributes
+  aligned with the authored `faceVertexIndices` count for `.usda`/`.usdc` parity.
+- Documented the Blender importer caveat that valid USD `float4[] faceVarying`
+  primvars such as `T` may be preserved in USD but not converted to Blender mesh
+  attributes.
+- Affected files: `native/td_pop_usd_writer/TDPopUsdWriter.cpp`,
+  `README.md`, `native/README.md`, `docs/adr/0011-experimental-native-backends.md`,
+  `docs/changelog.md`, `TD-SOP-USD-Anim-Bridge.toe`,
+  `TD_SOP_USD_Anim_Bridge.tox`.
+- Migrations: rebuild native plugins with `native/build.ps1` or press
+  `Setup Native Support`.
+
 ## [2026-06-21] Add Experimental Native Backend Modes
 
 - Added `Export Mode`, `Native Status`, and `Setup Native Support` to separate the

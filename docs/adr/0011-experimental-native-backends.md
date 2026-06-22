@@ -19,7 +19,11 @@ as explicit experimental choices:
   must fail before export when generic vertex/primitive custom attributes are
   present rather than dropping them.
 - `Experimental Native POP` uses a CPlusPlus POP writer to stream binary chunks for
-  the existing out-of-process USD sidecar builder.
+  the existing out-of-process USD sidecar builder. It filters degenerate mesh
+  corners and remaps vertex/primitive attributes to the authored topology order so
+  face-varying data stays aligned with `faceVertexIndices`. Line-strip and
+  2-point line-only POP topology is authored as `UsdGeomBasisCurves`, with point
+  attributes remapped into curve vertex order.
 - Native plugins are optional. Missing DLLs or unsupported platforms must not break
   the default SOP Python exporter.
 - Native plugin paths are authored as `project.folder` expressions inside the
@@ -34,3 +38,5 @@ as explicit experimental choices:
 - Production SOP networks that require generic vertex/primitive custom attributes
   should use `Compatible SOP Python` or convert through the explicit POP native
   path.
+- Mixed mesh + curve POP topology remains unsupported in one native export and
+  should be split into separate exports.

@@ -139,6 +139,25 @@ int halfModeFromString(const char* value)
 	if (mode == "all") return 2;
 	return 0;
 }
+
+enum class GeometryKind
+{
+	Points,
+	Mesh,
+	Curves,
+};
+
+const char* geometryKindName(GeometryKind kind)
+{
+	switch (kind)
+	{
+		case GeometryKind::Mesh: return "mesh";
+		case GeometryKind::Curves: return "curves";
+		default: return "points";
+	}
+}
+
+constexpr uint32_t POPRestartIndex = 0xFFFFFFFFu;
 }
 
 class TDPopUsdWriter : public POP_CPlusPlusBase
@@ -340,10 +359,14 @@ private:
 		uint32_t points = 0;
 		uint32_t vertices = 0;
 		uint32_t prims = 0;
+		GeometryKind kind = GeometryKind::Points;
 		bool isMesh = false;
-		bool hasLines = false;
 		std::vector<int32_t> faceCounts;
 		std::vector<int32_t> faceIndices;
+		std::vector<uint32_t> vertexSourceIndices;
+		std::vector<uint32_t> primSourceIndices;
+		std::vector<int32_t> curveCounts;
+		std::vector<uint32_t> curvePointSourceIndices;
 		std::vector<Attr> attrs;
 	};
 
@@ -363,6 +386,7 @@ private:
 		myPendingTimes.clear();
 		myFramesWritten = 0;
 		myInitialized = false;
+		myKind = GeometryKind::Points;
 		myIsMesh = false;
 		myFirstTopo.clear();
 		myError.clear();
@@ -420,6 +444,7 @@ private:
 		if (!myInitialized)
 		{
 			Snapshot empty;
+			empty.kind = GeometryKind::Points;
 			empty.isMesh = false;
 			initSections(empty);
 			for (int32_t pending : myPendingTimes)
@@ -457,22 +482,64 @@ private:
 				: nullptr;
 			if (topo)
 			{
-				snap.hasLines = topo->linesCount || topo->lineStripsCount;
-				snap.isMesh = (topo->trianglesCount + topo->quadsCount) > 0;
-				snap.prims = topo->trianglesCount + topo->quadsCount;
-				if (indices)
+				const bool hasMesh = topo->trianglesCount || topo->quadsCount;
+				const bool hasCurves = topo->lineStripsCount || topo->linesCount;
+				const bool hasPointPrims = topo->pointPrimitivesCount > 0;
+				if (hasMesh && (hasCurves || hasPointPrims))
+					throw std::runtime_error(
+						"Native POP writer does not yet support mixed mesh, curve, or point-primitive topology. Split the POP before export.");
+				if (hasCurves && hasPointPrims)
+					throw std::runtime_error(
+						"Native POP writer does not yet support mixed curve and point-primitive topology. Split the POP before export.");
+				if ((hasMesh || hasCurves) && !indices)
+					throw std::runtime_error(
+						"Native POP writer could not read the POP index buffer");
+
+				if (hasMesh)
 				{
 					appendFaces(snap, indices, topo->trianglesStartIndex,
-						topo->trianglesCount, 3);
+						topo->trianglesCount, 3, 0);
 					appendFaces(snap, indices, topo->quadsStartIndex,
-						topo->quadsCount, 4);
+						topo->quadsCount, 4, topo->trianglesCount);
+					snap.kind = GeometryKind::Mesh;
+					snap.prims = static_cast<uint32_t>(snap.faceCounts.size());
+					snap.vertices = static_cast<uint32_t>(snap.faceIndices.size());
 				}
+				else if (hasCurves)
+				{
+					if (topo->lineStripsCount)
+					{
+						if (!infoBuffers.lineStripsInfo)
+							throw std::runtime_error(
+								"Native POP writer could not read line strip metadata");
+						const uint32_t* strips = static_cast<const uint32_t*>(
+							infoBuffers.lineStripsInfo->getData(nullptr));
+						if (!strips)
+							throw std::runtime_error(
+								"Native POP writer line strip metadata has no CPU data");
+						appendLineStrips(snap, indices, strips,
+							topo->lineStripsStartIndex, topo->lineStripsCount);
+					}
+					if (topo->linesCount)
+						appendLines(snap, indices, topo->linesStartIndex,
+							topo->linesCount);
+					if (snap.curveCounts.empty())
+						throw std::runtime_error(
+							"Native POP writer found curve topology but no valid curves");
+					snap.kind = GeometryKind::Curves;
+					snap.prims = static_cast<uint32_t>(snap.curveCounts.size());
+					snap.vertices = static_cast<uint32_t>(
+						snap.curvePointSourceIndices.size());
+				}
+				else
+				{
+					snap.kind = GeometryKind::Points;
+					snap.prims = topo->pointPrimitivesCount;
+					snap.vertices = topo->pointPrimitivesCount;
+				}
+				snap.isMesh = snap.kind == GeometryKind::Mesh;
 			}
 		}
-		if (snap.hasLines)
-			throw std::runtime_error(
-				"Native writer supports point, triangle, and quad POP topology only");
-		snap.vertices = static_cast<uint32_t>(snap.faceIndices.size());
 
 		collectAttrs(input, POP_AttributeClass::Point, getInfo, snap);
 		collectAttrs(input, POP_AttributeClass::Vertex, getInfo, snap);
@@ -481,15 +548,86 @@ private:
 	}
 
 	void appendFaces(Snapshot& snap, const uint32_t* indices,
-		uint32_t start, uint32_t count, uint32_t size)
+		uint32_t start, uint32_t count, uint32_t size, uint32_t primBase)
 	{
 		for (uint32_t p = 0; p < count; ++p)
 		{
-			snap.faceCounts.push_back(static_cast<int32_t>(size));
+			std::vector<int32_t> face;
+			std::vector<uint32_t> sourceVertices;
+			face.reserve(size);
+			sourceVertices.reserve(size);
 			for (uint32_t i = 0; i < size; ++i)
-				snap.faceIndices.push_back(
-					static_cast<int32_t>(indices[start + p * size + i]));
+			{
+				const uint32_t sourceIndex = start + p * size + i;
+				const int32_t pointIndex = static_cast<int32_t>(indices[sourceIndex]);
+				if (!face.empty() && face.back() == pointIndex)
+					continue;
+				face.push_back(pointIndex);
+				sourceVertices.push_back(sourceIndex);
+			}
+			if (face.size() > 2 && face.front() == face.back())
+			{
+				face.pop_back();
+				sourceVertices.pop_back();
+			}
+			if (face.size() < 3)
+				continue;
+			snap.faceCounts.push_back(static_cast<int32_t>(face.size()));
+			snap.primSourceIndices.push_back(primBase + p);
+			snap.faceIndices.insert(snap.faceIndices.end(),
+				face.begin(), face.end());
+			snap.vertexSourceIndices.insert(snap.vertexSourceIndices.end(),
+				sourceVertices.begin(), sourceVertices.end());
 		}
+	}
+
+	void appendLineStrips(Snapshot& snap, const uint32_t* indices,
+		const uint32_t* strips, uint32_t stripsStart, uint32_t stripCount)
+	{
+		for (uint32_t strip = 0; strip < stripCount; ++strip)
+		{
+			const uint32_t relativeStart = strips[strip * 2];
+			const uint32_t countWithRestart = strips[strip * 2 + 1];
+			const size_t countBefore = snap.curvePointSourceIndices.size();
+			for (uint32_t i = 0; i < countWithRestart; ++i)
+			{
+				const uint32_t pointIndex =
+					indices[stripsStart + relativeStart + i];
+				if (pointIndex == POPRestartIndex)
+					continue;
+				appendCurvePoint(snap, pointIndex);
+			}
+			const size_t count = snap.curvePointSourceIndices.size() - countBefore;
+			if (count < 2)
+			{
+				snap.curvePointSourceIndices.resize(countBefore);
+				continue;
+			}
+			snap.curveCounts.push_back(static_cast<int32_t>(count));
+		}
+	}
+
+	void appendLines(Snapshot& snap, const uint32_t* indices,
+		uint32_t start, uint32_t count)
+	{
+		for (uint32_t line = 0; line < count; ++line)
+		{
+			const uint32_t a = indices[start + line * 2];
+			const uint32_t b = indices[start + line * 2 + 1];
+			if (a == POPRestartIndex || b == POPRestartIndex)
+				continue;
+			appendCurvePoint(snap, a);
+			appendCurvePoint(snap, b);
+			snap.curveCounts.push_back(2);
+		}
+	}
+
+	void appendCurvePoint(Snapshot& snap, uint32_t pointIndex)
+	{
+		if (pointIndex >= snap.points)
+			throw std::runtime_error(
+				"Native POP curve index is out of range");
+		snap.curvePointSourceIndices.push_back(pointIndex);
 	}
 
 	void collectAttrs(const OP_POPInput* input, POP_AttributeClass klass,
@@ -528,13 +666,19 @@ private:
 	void initSections(const Snapshot& snap)
 	{
 		mySections.clear();
-		myIsMesh = snap.isMesh;
+		myKind = snap.kind;
+		myIsMesh = myKind == GeometryKind::Mesh;
 		if (myIsMesh)
 		{
 			addSection("faceVertexCounts", "faceVertexCounts", "",
 				"int", "", 1, storageInt(), "faceVertexCounts", {});
 			addSection("faceVertexIndices", "faceVertexIndices", "",
 				"int", "", 1, storageInt(), "faceVertexIndices", {});
+		}
+		if (myKind == GeometryKind::Curves)
+		{
+			addSection("curveVertexCounts", "curveVertexCounts", "",
+				"int", "", 1, storageInt(), "curveVertexCounts", {});
 		}
 		addSection("extent", "extent", "", "float3", "", 3,
 			storageFloat(), "extent", {});
@@ -546,6 +690,13 @@ private:
 
 		for (const Attr& attr : snap.attrs)
 		{
+			if (myKind == GeometryKind::Curves &&
+				attr.klass != POP_AttributeClass::Point)
+			{
+				throw std::runtime_error(
+					"Native POP curve export currently supports point attributes only. Unsupported attribute: " +
+					attr.name);
+			}
 			Section section;
 			if (!resolveAttr(attr, section))
 				continue;
@@ -656,9 +807,16 @@ private:
 	std::string schemaSignature(const Snapshot& snap) const
 	{
 		std::ostringstream s;
-		s << (snap.isMesh ? "mesh" : "points");
+		s << geometryKindName(snap.kind);
 		for (const Attr& attr : snap.attrs)
 		{
+			if (snap.kind == GeometryKind::Curves &&
+				attr.klass != POP_AttributeClass::Point)
+			{
+				throw std::runtime_error(
+					"Native POP curve export currently supports point attributes only. Unsupported attribute: " +
+					attr.name);
+			}
 			Section section;
 			if (!const_cast<TDPopUsdWriter*>(this)->resolveAttr(attr, section))
 				continue;
@@ -672,8 +830,16 @@ private:
 	std::vector<char> topologyBytes(const Snapshot& snap) const
 	{
 		std::vector<char> out;
-		appendBytes(out, snap.faceCounts);
-		appendBytes(out, snap.faceIndices);
+		if (snap.kind == GeometryKind::Mesh)
+		{
+			appendBytes(out, snap.faceCounts);
+			appendBytes(out, snap.faceIndices);
+		}
+		else if (snap.kind == GeometryKind::Curves)
+		{
+			appendBytes(out, snap.curveCounts);
+			appendBytes(out, snap.curvePointSourceIndices);
+		}
 		return out;
 	}
 
@@ -686,7 +852,7 @@ private:
 
 	void checkTopology(const Snapshot& snap)
 	{
-		if (!myIsMesh)
+		if (myKind == GeometryKind::Points)
 			return;
 		if (topologyBytes(snap) != myFirstTopo)
 			throw std::runtime_error(
@@ -696,6 +862,7 @@ private:
 	void appendEmptyFrame(int32_t frame)
 	{
 		Snapshot empty;
+		empty.kind = myKind;
 		empty.isMesh = myIsMesh;
 		appendFrame(frame, empty, true);
 	}
@@ -708,6 +875,8 @@ private:
 				writeVector(section, frame, snap.faceCounts);
 			else if (section.target == "faceVertexIndices")
 				writeVector(section, frame, snap.faceIndices);
+			else if (section.target == "curveVertexCounts")
+				writeVector(section, frame, snap.curveCounts);
 			else if (section.target == "extent")
 				writeExtent(section, frame, snap, empty);
 			else if (section.target == "points")
@@ -747,13 +916,32 @@ private:
 						-std::numeric_limits<float>::max(),
 						-std::numeric_limits<float>::max(),
 						-std::numeric_limits<float>::max()};
-					for (uint64_t i = 0; i < p->elementCount; ++i)
+					if (snap.kind == GeometryKind::Curves)
 					{
-						const float* src = data + i * p->numComponents;
-						for (uint32_t c = 0; c < 3; ++c)
+						for (uint32_t sourceIndex : snap.curvePointSourceIndices)
 						{
-							minv[c] = std::min(minv[c], src[c]);
-							maxv[c] = std::max(maxv[c], src[c]);
+							if (sourceIndex >= p->elementCount)
+								throw std::runtime_error(
+									"POP curve point index is out of range for P");
+							const float* src = data +
+								uint64_t(sourceIndex) * p->numComponents;
+							for (uint32_t c = 0; c < 3; ++c)
+							{
+								minv[c] = std::min(minv[c], src[c]);
+								maxv[c] = std::max(maxv[c], src[c]);
+							}
+						}
+					}
+					else
+					{
+						for (uint64_t i = 0; i < p->elementCount; ++i)
+						{
+							const float* src = data + i * p->numComponents;
+							for (uint32_t c = 0; c < 3; ++c)
+							{
+								minv[c] = std::min(minv[c], src[c]);
+								maxv[c] = std::max(maxv[c], src[c]);
+							}
 						}
 					}
 					for (uint32_t c = 0; c < 3; ++c)
@@ -789,6 +977,26 @@ private:
 			attr->buffer->getData(nullptr));
 		if (!data)
 			throw std::runtime_error("POP attribute has no CPU data: " + name);
+		if (klass == POP_AttributeClass::Vertex)
+		{
+			writeRemappedAttribute(section, frame, *attr, data,
+				snap.vertexSourceIndices);
+			return;
+		}
+		if (snap.kind == GeometryKind::Curves &&
+			klass == POP_AttributeClass::Point)
+		{
+			writeRemappedAttribute(section, frame, *attr, data,
+				snap.curvePointSourceIndices);
+			return;
+		}
+		if (klass == POP_AttributeClass::Primitive &&
+			snap.primSourceIndices.size() != attr->elementCount)
+		{
+			writeRemappedAttribute(section, frame, *attr, data,
+				snap.primSourceIndices);
+			return;
+		}
 		if (section.components.size() == attr->numComponents)
 		{
 			bool contiguous = true;
@@ -813,6 +1021,24 @@ private:
 		}
 		writeRaw(section, frame, tmp.data(), tmp.size() * sizeof(float),
 			attr->elementCount);
+	}
+
+	void writeRemappedAttribute(Section& section, int32_t frame,
+		const Attr& attr, const float* data, const std::vector<uint32_t>& indices)
+	{
+		std::vector<float> tmp;
+		tmp.reserve(size_t(indices.size()) * section.tupleSize);
+		for (uint32_t sourceIndex : indices)
+		{
+			if (sourceIndex >= attr.elementCount)
+				throw std::runtime_error(
+					"POP attribute source index is out of range: " + attr.name);
+			const float* src = data + uint64_t(sourceIndex) * attr.numComponents;
+			for (uint32_t comp : section.components)
+				tmp.push_back(src[comp]);
+		}
+		writeRaw(section, frame, tmp.data(), tmp.size() * sizeof(float),
+			indices.size());
 	}
 
 	const Attr* findAttr(const Snapshot& snap, POP_AttributeClass klass,
@@ -850,6 +1076,7 @@ private:
 		out << "{\n";
 		out << "  \"version\": 1,\n";
 		out << "  \"stage\": {\n";
+		out << "    \"geometryKind\": \"" << geometryKindName(myKind) << "\",\n";
 		out << "    \"isMesh\": " << (myIsMesh ? "true" : "false") << ",\n";
 		out << "    \"framesPerSecond\": " << myFps << ",\n";
 		out << "    \"timeCodesPerSecond\": " << myFps << ",\n";
@@ -904,6 +1131,7 @@ private:
 		out << "  \"manifest\": \"" << jsonEscape(normPath(myManifestPath)) << "\",\n";
 		out << "  \"frames\": " << myFramesWritten << ",\n";
 		out << "  \"sections\": " << mySections.size() << ",\n";
+		out << "  \"geometryKind\": \"" << geometryKindName(myKind) << "\",\n";
 		out << "  \"isMesh\": " << (myIsMesh ? "true" : "false") << ",\n";
 		out << "  \"lastMs\": " << myLastMs << "\n";
 		out << "}\n";
@@ -929,6 +1157,7 @@ private:
 	uint32_t myLastPrims = 0;
 	int32_t myCookCount = 0;
 	bool myInitialized = false;
+	GeometryKind myKind = GeometryKind::Points;
 	bool myIsMesh = false;
 	bool myTopoVaries = false;
 };

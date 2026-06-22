@@ -40,6 +40,12 @@ def _time_codes(prim):
 		mesh = UsdGeom.Mesh(prim)
 		attrs.extend([mesh.GetFaceVertexCountsAttr(),
 			mesh.GetFaceVertexIndicesAttr()])
+	if prim.IsA(UsdGeom.BasisCurves):
+		curves = UsdGeom.BasisCurves(prim)
+		attrs.extend([curves.GetCurveVertexCountsAttr(),
+			curves.GetWidthsAttr()])
+	if prim.IsA(UsdGeom.Points):
+		attrs.append(UsdGeom.Points(prim).GetWidthsAttr())
 	attrs.extend(UsdGeom.PrimvarsAPI(prim).GetPrimvars())
 
 	samples = set()
@@ -57,25 +63,30 @@ def validate(path):
 
 	prim = None
 	for p in stage.Traverse():
-		if p.IsA(UsdGeom.Mesh) or p.IsA(UsdGeom.Points):
+		if (p.IsA(UsdGeom.Mesh) or p.IsA(UsdGeom.Points)
+				or p.IsA(UsdGeom.BasisCurves)):
 			prim = p
 			break
 	if prim is None:
-		print('FAIL: no Mesh or Points prim found')
+		print('FAIL: no Mesh, Points, or BasisCurves prim found')
 		return False
 
 	is_mesh = prim.IsA(UsdGeom.Mesh)
+	is_curves = prim.IsA(UsdGeom.BasisCurves)
 	mesh = UsdGeom.Mesh(prim) if is_mesh else None
+	curves = UsdGeom.BasisCurves(prim) if is_curves else None
 	pb = UsdGeom.PointBased(prim)
 	api = UsdGeom.PrimvarsAPI(prim)
 	failures = []
+	kind = 'Mesh' if is_mesh else 'BasisCurves' if is_curves else 'Points'
 
 	print('Validating %s  (%s "%s")'
-		% (path, 'Mesh' if is_mesh else 'Points', prim.GetName()))
+		% (path, kind, prim.GetName()))
 
 	for t in _time_codes(prim):
 		n_points = _len(pb.GetPointsAttr().Get(t))
 		n_faces = n_face_verts = 0
+		n_curves = n_curve_verts = 0
 		if is_mesh:
 			counts = mesh.GetFaceVertexCountsAttr().Get(t)
 			indices = mesh.GetFaceVertexIndicesAttr().Get(t)
@@ -87,6 +98,15 @@ def validate(path):
 			if indices and max(indices) >= n_points:
 				failures.append('t=%s index %d out of range (points=%d)'
 					% (t, max(indices), n_points))
+		if is_curves:
+			counts = curves.GetCurveVertexCountsAttr().Get(t)
+			n_curves = _len(counts)
+			n_curve_verts = sum(counts) if counts is not None else 0
+			n_faces = n_curves
+			n_face_verts = n_curve_verts
+			if counts is not None and n_curve_verts != n_points:
+				failures.append('t=%s sum(curveVertexCounts)=%d != '
+					'points=%d' % (t, n_curve_verts, n_points))
 
 		checks = []
 		normals = pb.GetNormalsAttr().Get(t)
@@ -101,6 +121,17 @@ def validate(path):
 		if extent is not None and _len(extent) != 2:
 			failures.append('t=%s extent len=%d != 2'
 				% (t, _len(extent)))
+		if is_curves:
+			widths = curves.GetWidthsAttr().Get(t)
+			if widths is not None:
+				checks.append(('widths', curves.GetWidthsInterpolation(),
+					_len(widths)))
+		elif prim.IsA(UsdGeom.Points):
+			points = UsdGeom.Points(prim)
+			widths = points.GetWidthsAttr().Get(t)
+			if widths is not None:
+				checks.append(('widths', points.GetWidthsInterpolation(),
+					_len(widths)))
 		for pv in api.GetPrimvars():
 			val = pv.Get(t)
 			if val is not None:
@@ -114,8 +145,12 @@ def validate(path):
 					% (t, name, interp, got, exp))
 
 		tag = 't=%s' % t
-		print('  %-10s points=%d faces=%d faceVerts=%d  attrs=%d'
-			% (tag, n_points, n_faces, n_face_verts, len(checks)))
+		if is_curves:
+			print('  %-10s points=%d curves=%d curveVerts=%d  attrs=%d'
+				% (tag, n_points, n_curves, n_curve_verts, len(checks)))
+		else:
+			print('  %-10s points=%d faces=%d faceVerts=%d  attrs=%d'
+				% (tag, n_points, n_faces, n_face_verts, len(checks)))
 
 	if failures:
 		print('FAIL: %d problem(s):' % len(failures))

@@ -26,6 +26,10 @@ expressions at runtime. Do not save absolute local DLL paths into the component.
   unsupported generic vertex/primitive custom attributes before export.
 - `td_pop_usd_writer/` - experimental CPlusPlus POP writer used by
   `Experimental Native POP` for point, vertex, and primitive float attributes.
+  It filters degenerate mesh corners and remaps vertex/primitive attributes to the
+  authored topology order before writing mesh USD chunks. Line-strip/line-only
+  POP topology is exported as `UsdGeomBasisCurves`, with point attributes
+  remapped into curve vertex order.
 - `td_sop_probe/` - diagnostic probe that documents the public C++ SOP input API
   limitation: point custom attributes are visible, generic vertex/primitive
   custom attributes are not.

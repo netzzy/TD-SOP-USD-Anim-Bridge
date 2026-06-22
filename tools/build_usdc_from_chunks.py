@@ -96,6 +96,8 @@ def _create_attr(geom, section: dict):
 		return prim.CreateAttribute("faceVertexCounts", value_type, False)
 	if target == "faceVertexIndices":
 		return prim.CreateAttribute("faceVertexIndices", value_type, False)
+	if target == "curveVertexCounts":
+		return prim.CreateAttribute("curveVertexCounts", value_type, False)
 	if target == "extent":
 		return prim.CreateAttribute("extent", value_type, False)
 	if target == "points":
@@ -109,7 +111,8 @@ def _create_attr(geom, section: dict):
 	if target == "ids":
 		return prim.CreateAttribute("ids", value_type, False)
 	if target == "widths":
-		points = UsdGeom.Points(prim)
+		points = (UsdGeom.Curves(prim)
+			if prim.IsA(UsdGeom.BasisCurves) else UsdGeom.Points(prim))
 		if interp:
 			points.SetWidthsInterpolation(interp)
 		return prim.CreateAttribute("widths", value_type, False)
@@ -141,11 +144,19 @@ def build(manifest_path: str, output_path: str) -> bool:
 	UsdGeom.SetStageMetersPerUnit(stage, float(stage_info.get("metersPerUnit", 1)))
 	UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
 
-	if stage_info["isMesh"]:
+	geometry_kind = stage_info.get(
+		"geometryKind", "mesh" if stage_info["isMesh"] else "points")
+	if geometry_kind == "mesh":
 		geom = UsdGeom.Mesh.Define(stage, "/Exported")
 		geom.CreateSubdivisionSchemeAttr().Set(UsdGeom.Tokens.none)
-	else:
+	elif geometry_kind == "curves":
+		geom = UsdGeom.BasisCurves.Define(stage, "/Exported")
+		geom.CreateTypeAttr(UsdGeom.Tokens.linear)
+		geom.CreateWrapAttr(UsdGeom.Tokens.nonperiodic)
+	elif geometry_kind == "points":
 		geom = UsdGeom.Points.Define(stage, "/Exported")
+	else:
+		raise RuntimeError("Unsupported geometry kind: %s" % geometry_kind)
 	stage.SetDefaultPrim(geom.GetPrim())
 
 	for section in manifest["sections"]:

@@ -13,7 +13,7 @@ Build procedural (or any) SOP animation in TouchDesigner and write it straight t
 ## Features
 
 - Animated `.usda` and `.usdc` export from a SOP input.
-- Mesh and point output, including changing topology.
+- Mesh, point, and Native POP curve output, including changing topology.
 - Point, vertex, and primitive attributes, including custom attributes.
 - Experimental native SOP/POP acceleration paths.
 - Native TD Mesh primitive tessellation to polygon faces.
@@ -87,7 +87,7 @@ For a 60 FPS TouchDesigner simulation that should become a 30 FPS USD cache whil
 | --- | --- | --- | --- |
 | `Compatible SOP Python` | SOP input 0 | Point, vertex, and primitive SOP attributes, including custom attrs | Default production path |
 | `Experimental Native SOP` | SOP input 0 | Point custom attrs plus standard SOP `N`, `Cd`, and `uv`/texture attrs; generic vertex/primitive custom attrs are rejected before export | Opt-in experimental path for safe SOP inputs |
-| `Experimental Native POP` | POP input 1 | POP point, vertex, and primitive float attributes through the C++ POP API | Opt-in experimental path |
+| `Experimental Native POP` | POP input 1 | POP point, vertex, and primitive float attributes through the C++ POP API for triangle/quad meshes; line strips and 2-point lines export as `UsdGeomBasisCurves` with point attrs remapped to curve vertex order | Opt-in experimental path |
 
 Native modes are never allowed to silently drop attributes. If the selected native
 path cannot preserve the input safely, export fails before writing the final USD.
@@ -96,6 +96,12 @@ If native plugins are missing or built for the wrong platform/TouchDesigner buil
 
 Native plugin parameters are set from `project.folder` at runtime, so the shipped
 component is not tied to a developer machine path.
+
+Blender import note: scalar/vector attributes such as `primvars:test` import as
+Blender mesh attributes when mesh attributes are enabled. A valid USD primvar such
+as `float4[] primvars:T` with `faceVarying` interpolation is preserved in USD, but
+Blender 5.0 reports that this type cannot be converted to a Blender mesh
+attribute.
 
 ## Output And Size
 
@@ -110,6 +116,8 @@ Animated export chunks, setup logs, and temporary `.usda` files are written unde
 - NURBS and Bezier input need a Convert SOP first.
 - Experimental native plugins are currently Windows x64 / TouchDesigner
   2025.32820 development artifacts, not required for the default SOP exporter.
+- Experimental Native POP curve export supports line-strip/line-only inputs.
+  Mixed mesh + curve POP topology should be split before export.
 - The `.usdc` sidecar still authors the final USD layer out-of-process, so peak sidecar RAM can grow with cache size.
 - A SOP containing loose points plus faces currently exports one mesh; multi-prim
   output is a known gap.
