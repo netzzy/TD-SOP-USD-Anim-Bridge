@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-06-26] Fix Native POP Live Point Counts
+
+- Fixed Experimental Native POP point-cloud exports so direct point attributes
+  write the live POP point count instead of the allocated particle buffer size.
+- Limited Native POP point-cloud extent calculation to live points so stale
+  allocated particle slots no longer affect USD bounds.
+- Kept the native build output compatible with existing live projects that still
+  reference `TDPopUsdWriter_curves.dll`.
+- Affected files: `native/td_pop_usd_writer/TDPopUsdWriter.cpp`,
+  `native/build.ps1`, `docs/changelog.md`.
+- Migrations: rebuild native plugins with `native/build.ps1` or press
+  `Setup Native Support`.
+
 ## [2026-06-22] Save TouchDesigner Project State
 
 - Persisted the current TouchDesigner project state in the `.toe` file.

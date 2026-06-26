@@ -90,6 +90,10 @@ try {
 		-IncludePath $tdPopSamples `
 		-OutputDll (Join-Path $PSScriptRoot "td_pop_usd_writer\build\TDPopUsdWriter.dll") `
 		-OutputObj (Join-Path $PSScriptRoot "td_pop_usd_writer\build\TDPopUsdWriter.obj")
+	Copy-Item `
+		-LiteralPath (Join-Path $PSScriptRoot "td_pop_usd_writer\build\TDPopUsdWriter.dll") `
+		-Destination (Join-Path $PSScriptRoot "td_pop_usd_writer\build\TDPopUsdWriter_curves.dll") `
+		-Force
 
 	Build-Plugin `
 		-Source (Join-Path $PSScriptRoot "td_sop_usd_writer\TDSopUsdWriter.cpp") `

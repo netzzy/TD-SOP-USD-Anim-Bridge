@@ -906,7 +906,9 @@ private:
 			{
 				const float* data = static_cast<const float*>(
 					p->buffer->getData(nullptr));
-				if (data && p->elementCount > 0)
+				const uint64_t pointCount = directWriteCount(snap, *p);
+				validateDirectWriteCount(snap, *p, pointCount);
+				if (data && pointCount > 0)
 				{
 					float minv[3] = {
 						std::numeric_limits<float>::max(),
@@ -934,7 +936,7 @@ private:
 					}
 					else
 					{
-						for (uint64_t i = 0; i < p->elementCount; ++i)
+						for (uint64_t i = 0; i < pointCount; ++i)
 						{
 							const float* src = data + i * p->numComponents;
 							for (uint32_t c = 0; c < 3; ++c)
@@ -997,6 +999,8 @@ private:
 				snap.primSourceIndices);
 			return;
 		}
+		const uint64_t elementCount = directWriteCount(snap, *attr);
+		validateDirectWriteCount(snap, *attr, elementCount);
 		if (section.components.size() == attr->numComponents)
 		{
 			bool contiguous = true;
@@ -1005,22 +1009,46 @@ private:
 			if (contiguous)
 			{
 				writeRaw(section, frame, data,
-					size_t(attr->elementCount) * attr->numComponents *
+					size_t(elementCount) * attr->numComponents *
 						sizeof(float),
-					attr->elementCount);
+					elementCount);
 				return;
 			}
 		}
 		std::vector<float> tmp;
-		tmp.reserve(size_t(attr->elementCount) * section.tupleSize);
-		for (uint64_t i = 0; i < attr->elementCount; ++i)
+		tmp.reserve(size_t(elementCount) * section.tupleSize);
+		for (uint64_t i = 0; i < elementCount; ++i)
 		{
 			const float* src = data + i * attr->numComponents;
 			for (uint32_t comp : section.components)
 				tmp.push_back(src[comp]);
 		}
 		writeRaw(section, frame, tmp.data(), tmp.size() * sizeof(float),
-			attr->elementCount);
+			elementCount);
+	}
+
+	uint64_t directWriteCount(const Snapshot& snap, const Attr& attr) const
+	{
+		if (snap.kind == GeometryKind::Points &&
+			attr.klass == POP_AttributeClass::Point)
+			return snap.points;
+		return attr.elementCount;
+	}
+
+	void validateDirectWriteCount(const Snapshot& snap, const Attr& attr,
+		uint64_t count) const
+	{
+		if (attr.elementCount >= count)
+			return;
+		std::ostringstream msg;
+		msg << "POP attribute buffer has " << attr.elementCount
+			<< " elements for " << classLabel(attr.klass) << " attribute "
+			<< attr.name << ", but the POP reports " << count
+			<< " live elements";
+		if (snap.kind == GeometryKind::Points &&
+			attr.klass == POP_AttributeClass::Point)
+			msg << " for point export";
+		throw std::runtime_error(msg.str());
 	}
 
 	void writeRemappedAttribute(Section& section, int32_t frame,
